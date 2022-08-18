@@ -111,8 +111,8 @@
 					
 					CFEntry& curr_entry = curr_org ? entries[CurI] : cf[-checked[CurI]-1];
 					CFEntry& next_entry = next_org ? entries[NextI] : cf[-checked[NextI]-1];
-					n1 = curr_entry.n;
-					n2 = next_entry.n;
+					n1 = (int)curr_entry.n;
+					n2 = (int)next_entry.n;
 					cf[step] = curr_entry + next_entry;
 
 					update_distance(n1,n2,CurI,NextI,nentry,&checked[0], dist);
@@ -172,7 +172,7 @@
 				if (chainptr<=0)
 					return chainptr;
 
-				double d, dmax = 0;
+				float d, dmax = 0;
 				int    i, imax = -1;
 				for (i=0; i<=chainptr; i++)
 				{
@@ -203,7 +203,7 @@
 			int nearest_neighbor(int CurI, int n, int *checked, dist_matrix_type& dist)
 			{
 				int    imin=0;
-				double d, dmin = (std::numeric_limits<float_type>::max)();
+				float d, dmin = (std::numeric_limits<float_type>::max)();
 				for( int i = 0 ; i < n ; i++ )
 				{
 					if( i == CurI || checked[i] == 0 )

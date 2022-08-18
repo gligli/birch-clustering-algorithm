@@ -31,6 +31,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/numeric/ublas/symmetric.hpp>
 #include <boost/numeric/ublas/vector.hpp>
+#include "pmmintrin.h"
 
 #define PAGE_SIZE			(4*1024) /* assuming 4K page */
 
@@ -65,7 +66,7 @@ public:
 
 	enum { fdim = dim }; /** enum for recognizing dimension outside this class. */
 
-	typedef	double float_type;	/** float type according to a precision - double, float, and so on. */
+	typedef	float float_type;	/** float type according to a precision - double, float, and so on. */
 	typedef std::vector<float_type>	item_vec_type; /** vector of items. */
 	/** pointer type of CFNode.
 	 * shared_ptr is applied to preventing memory leakage.
@@ -229,49 +230,103 @@ public:
 
 public:
 
+	static const float euclidean_intrinsic_float(int n, const float* x, const float* y, float xm, float ym) {
+		__m128 euclidean0 = _mm_setzero_ps();
+		__m128 euclidean1 = _mm_setzero_ps();
+		__m128 mula = _mm_set_ps1(xm);
+		__m128 mulb = _mm_set_ps1(ym);
+
+		for (; n > 7; n -= 8) {
+			const __m128 a0 = _mm_loadu_ps(x);
+			x += 4;
+			const __m128 a1 = _mm_loadu_ps(x);
+			x += 4;
+			const __m128 b0 = _mm_loadu_ps(y);
+			y += 4;
+			const __m128 b1 = _mm_loadu_ps(y);
+			y += 4;
+
+			const __m128 a0_mul = _mm_mul_ps(a0, mula);
+			const __m128 a1_mul = _mm_mul_ps(a1, mula);
+			const __m128 b0_mul = _mm_mul_ps(b0, mulb);
+			const __m128 b1_mul = _mm_mul_ps(b1, mulb);
+
+			const __m128 a0_minus_b0 = _mm_sub_ps(a0_mul, b0_mul);
+			const __m128 a1_minus_b1 = _mm_sub_ps(a1_mul, b1_mul);
+
+			const __m128 a0_minus_b0_sq = _mm_mul_ps(a0_minus_b0, a0_minus_b0);
+			const __m128 a1_minus_b1_sq = _mm_mul_ps(a1_minus_b1, a1_minus_b1);
+
+			euclidean0 = _mm_add_ps(euclidean0, a0_minus_b0_sq);
+			euclidean1 = _mm_add_ps(euclidean1, a1_minus_b1_sq);
+		}
+
+		const __m128 euclidean = _mm_add_ps(euclidean0, euclidean1);
+
+		const __m128 sumt = _mm_hadd_ps(euclidean, euclidean);
+		const __m128 sum = _mm_hadd_ps(sumt, sumt);
+
+		float result = sum.m128_f32[0];
+
+		return result;
+	}
+
 	/** Euclidean Distance of Centroid */
 	static float_type _DistD0( const CFEntry& lhs, const CFEntry& rhs )
 	{
-		float_type dist = 0.0;
-		float_type tmp;
-		for (std::size_t i = 0 ; i < dim ; i++) {
-			tmp =  lhs.sum[i]/lhs.n - rhs.sum[i]/rhs.n;
-			dist += tmp*tmp;
-		}
-		//assert(dist >= 0.0);
-		return (std::max)(dist, 0.0);
+		//float_type dist = 0.0f;
+		//float_type tmp;
+		//for (std::size_t i = 0 ; i < dim ; i++) {
+		//	tmp =  lhs.sum[i]/lhs.n - rhs.sum[i]/rhs.n;
+		//	dist += tmp*tmp;
+		//}
+		////assert(dist >= 0.0);
+		//return (std::fmax)(dist, 0.0f);
+		
+		float_type inv_lhs_n = 1.0f / lhs.n;
+		float_type inv_rhs_n = 1.0f / rhs.n;
+
+		//float_type dist = 0.0f;
+		//float_type tmp;
+		//for (std::size_t i = 0; i < dim; i++) {
+		//	tmp = lhs.sum[i] * inv_lhs_n - rhs.sum[i] * inv_rhs_n;
+		//	dist += tmp * tmp;
+		//}
+		//return dist;
+
+		return euclidean_intrinsic_float(dim, lhs.sum, rhs.sum, inv_lhs_n, inv_rhs_n);
 	}
 
 	/** Manhattan Distance of Centroid */
 	static float_type _DistD1( const CFEntry& lhs, const CFEntry& rhs )
 	{
-		float_type dist = 0.0;
+		float_type dist = 0.0f;
 		float_type tmp;
 		for (std::size_t i = 0 ; i < dim ; i++) {
 			tmp = std::abs(lhs.sum[i]/lhs.n - rhs.sum[i]/rhs.n);
 			dist += tmp;
 		}
 		//assert(dist >= 0.0);
-		return (std::max)(dist, 0.0);
+		return (std::fmax)(dist, 0.0f);
 	}
 
 	/** Pairwise IntraCluster Distance */
 	static float_type _DistD2( const CFEntry& lhs, const CFEntry& rhs )
 	{
-		float_type dot = 0.0;
+		float_type dot = 0.0f;
 		for(std::size_t i = 0 ; i < dim ; i++)
 			dot += lhs.sum[i] * rhs.sum[i];
 
 		float_type dist = ( rhs.n*lhs.sum_sq + lhs.n*rhs.sum_sq - 2*dot ) / (lhs.n*rhs.n);
 		//assert(dist >= 0.0);
-		return std::max(dist, 0.0);
+		return std::fmax(dist, 0.0f);
 	}
 
 	/** Pairwise InterClusterDistance */
 	static float_type _DistD3( const CFEntry& lhs, const CFEntry& rhs)
 	{
 		std::size_t tmpn = lhs.n+rhs.n;
-		float_type tmp1, tmp2 = 0.0;
+		float_type tmp1, tmp2 = 0.0f;
 		for (std::size_t i = 0 ; i < dim ; i++)
 		{
 			tmp1 = lhs.sum[i] + rhs.sum[i];
@@ -279,7 +334,7 @@ public:
 		}
 		float_type dist = 2 * ((lhs.sum_sq+rhs.sum_sq)/(tmpn-1) - tmp2);
 		//assert(dist >= 0.0);
-		return std::max(dist,0.0);
+		return std::max(dist,0.0f);
 	}
 
 	/** Diameter of the CFEntry */
@@ -288,32 +343,37 @@ public:
 		if( e.n <= 1 )
 			return 0.0;
 
-		float_type temp = 0.0;
+		float_type inv_e_n = 1.0f / e.n;
+		float_type inv_e_nm1 = 1.0f / (e.n - 1);
+
+		float_type temp = 0.0f;
 		for (std::size_t i = 0 ; i < dim ; i++)
-			temp += e.sum[i]/e.n * e.sum[i]/(e.n - 1);
+			temp += e.sum[i] * inv_e_n * e.sum[i] * inv_e_nm1;
 
 		float_type diameter = 2 * (e.sum_sq/(e.n - 1) - temp);
 
 		//assert(diameter >= 0.0);
-		return (std::max)(diameter,0.0);
+		return (std::fmax)(diameter,0.0f);
 	}
 
 	/** Radius of the CFEntry */
 	static float_type _Radius( const CFEntry& e )
 	{
 		if( e.n <= 1 )
-			return 0.0;
+			return 0.0f;
+		
+		float_type inv_e_n = 1.0f / e.n;
 
-		float_type tmp0, tmp1 = 0.0;
+		float_type tmp0, tmp1 = 0.0f;
 		for (std::size_t i=0; i < dim ; i++)
 		{
-			tmp0 = e.sum[i] / e.n;
+			tmp0 = e.sum[i] * inv_e_n;
 			tmp1 += tmp0*tmp0;
 		}
 		float_type radius = e.sum_sq/e.n - tmp1;
 		
 		//assert(radius >= 0.0);
-		return std::max(radius, 0.0);
+		return std::fmax(radius, 0.0f);
 	}
 
 private:
@@ -657,7 +717,7 @@ private:
 					for( std::size_t j = i+1 ; j < leaf->size ; j++ )
 					{
 						dist = dist_func( leaf->entries[i], leaf->entries[j] );
-						dist = dist >= 0.0 ? sqrt(dist) : 0.0;
+						dist = dist >= 0.0f ? sqrtf(dist) : 0.0f;
 						if( min_dists[i] > dist )	min_dists[i] = dist;
 						if( min_dists[j] > dist )	min_dists[j] = dist;
 					}
@@ -686,7 +746,7 @@ public:
 		if( extend )
 		{
 			// decide the next threshold
-			float_type new_threshold = std::pow(average_dist_closest_pair_leaf_entries(),2);
+			float_type new_threshold = std::powf(average_dist_closest_pair_leaf_entries(),2);
 			dist_threshold = dist_threshold > new_threshold ? dist_threshold*2 : new_threshold;
 		}
 

@@ -36,25 +36,28 @@
 
 #include <time.h>
 
-typedef CFTree<2> cftree_type;
+#include <cstdio>
+#include "oneapi/tbb/tbbmalloc_proxy.h"
 
-static double randf()
+typedef CFTree<192> cftree_type;
+
+static cftree_type::float_type randf()
 {
-	return rand()/(double)RAND_MAX;
+	return rand()/(cftree_type::float_type)RAND_MAX;
 }
 
 struct item_type
 {
 	item_type() : id(0) { std::fill( item, item + sizeof(item)/sizeof(item[0]), 0 ); }
-	item_type( double* in_item ) : id(0) { std::copy(in_item, in_item+sizeof(item)/sizeof(item[0]), item); }
-	double& operator[]( int i ) { return item[i]; }
-	double operator[]( int i ) const { return item[i]; }
+	item_type(cftree_type::float_type* in_item ) : id(0) { std::copy(in_item, in_item+sizeof(item)/sizeof(item[0]), item); }
+	cftree_type::float_type& operator[]( int i ) { return item[i]; }
+	cftree_type::float_type operator[]( int i ) const { return item[i]; }
 	std::size_t size() const { return sizeof(item)/sizeof(item[0]); }
 
 	int& cid() { return id; }
 	const int cid() const { return id; }
 
-	double item[cftree_type::fdim];
+	cftree_type::float_type item[cftree_type::fdim];
 	int id;
 };
 
@@ -130,9 +133,9 @@ int main( int argc, char* argv[] )
 	load_items( argc >=2 ? argv[1] : NULL, items );
 
 	std::cout << items.size() << " items loaded" << std::endl;
-
-	cftree_type::float_type birch_threshold = argc >=3 ? atof(argv[2]) : 0.25/(double)cftree_type::fdim;
-	cftree_type tree(birch_threshold, 0);
+	
+	cftree_type::float_type birch_threshold = argc >=3 ? (cftree_type::float_type)atof(argv[2]) : 0.25f/(cftree_type::float_type)cftree_type::fdim;
+	cftree_type tree(birch_threshold, 512*1024*1024);
 
 	// phase 1 and 2: building, compacting when overflows memory limit
 	for( std::size_t i = 0 ; i < items.size() ; i++ )
@@ -160,4 +163,83 @@ int main( int argc, char* argv[] )
 	print_items( argc >=4 ? argv[3] : "item_cid.txt" , items);
 
 	return 0;
+}
+
+extern "C"
+{
+	#define DLL_API __declspec(dllexport)
+
+	#define API_FP_PRE() \
+		unsigned int _cFP; \
+		_controlfp_s(&_cFP, 0, 0); \
+		_set_controlfp(0x1f, 0x1f);
+
+	#define API_FP_POST() \
+		_set_controlfp(_cFP, 0x1f); \
+		_clearfp();
+
+	class api_ptr_t {
+		public:
+			items_type items;
+			cftree_type* tree;
+
+			api_ptr_t(void) {};
+	};
+
+	DLL_API void* __stdcall birch_create(float dist_threshold, uint64_t mem_limit)
+	{
+		API_FP_PRE();
+
+		api_ptr_t* ab = new api_ptr_t();
+		ab->tree = new cftree_type(dist_threshold, mem_limit);
+
+		API_FP_POST();
+
+		return ab;
+	}
+
+	DLL_API void __stdcall birch_destroy(void* birch)
+	{
+		API_FP_PRE();
+
+		api_ptr_t* ab = (api_ptr_t*) birch;
+
+		delete ab->tree;
+		delete ab;
+
+		API_FP_POST();
+	}
+
+	DLL_API void __stdcall birch_insert_line(void* birch, cftree_type::float_type* line)
+	{
+		API_FP_PRE();
+
+		api_ptr_t* ab = (api_ptr_t*)birch;
+
+		ab->tree->insert(line);
+		ab->items.push_back(line);
+
+		API_FP_POST();
+	}
+
+	DLL_API void __stdcall birch_get_results(void * birch, int32_t* pointToCluster)
+	{
+		API_FP_PRE();
+
+		api_ptr_t* ab = (api_ptr_t*)birch;
+
+		ab->tree->rebuild(true);
+
+		cftree_type::cfentry_vec_type entries;
+		ab->tree->cluster(entries);
+
+		std::vector<int> item_cids;
+		ab->tree->redist(ab->items.begin(), ab->items.end(), entries, item_cids);
+
+		for (std::size_t i = 0; i < item_cids.size(); i++)
+			*pointToCluster++ = item_cids[i];
+			
+			
+		API_FP_POST();
+	}
 }
