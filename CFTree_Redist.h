@@ -186,7 +186,7 @@
 				ublas_vec_type center(dim);
 				std::copy(e.sum, e.sum + dim, center.begin());
 				center /= e.n;
-				subclusters.push_back( subcluster_summary( center, _Radius(e), std::sqrtf(inner_prod(center, center) )) ); 
+				subclusters.push_back( subcluster_summary( center, _Radius(e), std::sqrt(inner_prod(center, center) )) ); 
 			}
 
 			std::sort( subclusters.begin(), subclusters.end(), subcluster_lessthan_norm() );
@@ -219,7 +219,7 @@
 		int _redist( ublas_vec_type& tmpv, subsum_vec_type& subsums, ublas_sym_matrix_type& dist_mat )
 		{
 			int    imin,imax,i,k,n,start,end,median;
-			float d,tmpnorm,idist,tmpdist;
+			double d,tmpnorm,idist,tmpdist;
 			ublas_vec_type diff;
 
 			i = 0;

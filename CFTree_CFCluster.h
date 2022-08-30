@@ -172,7 +172,7 @@
 				if (chainptr<=0)
 					return chainptr;
 
-				float d, dmax = 0;
+				double d, dmax = 0;
 				int    i, imax = -1;
 				for (i=0; i<=chainptr; i++)
 				{
@@ -203,7 +203,7 @@
 			int nearest_neighbor(int CurI, int n, int *checked, dist_matrix_type& dist)
 			{
 				int    imin=0;
-				float d, dmin = (std::numeric_limits<float_type>::max)();
+				double d, dmin = (std::numeric_limits<float_type>::max)();
 				for( int i = 0 ; i < n ; i++ )
 				{
 					if( i == CurI || checked[i] == 0 )

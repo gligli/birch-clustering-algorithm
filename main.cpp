@@ -122,45 +122,45 @@ static void load_items( const char* fname, items_type& items )
 
 int main( int argc, char* argv[] )
 {
-	if( argc != 4 )
-	{
-		std::cout << "usage: birch (input-file) (range-threshold) (output-file)" << std::endl;
-		return 0;
-	}
+	//if( argc != 4 )
+	//{
+	//	std::cout << "usage: birch (input-file) (range-threshold) (output-file)" << std::endl;
+	//	return 0;
+	//}
 
-	// load or generate items
-	items_type items;
-	load_items( argc >=2 ? argv[1] : NULL, items );
+	//// load or generate items
+	//items_type items;
+	//load_items( argc >=2 ? argv[1] : NULL, items );
 
-	std::cout << items.size() << " items loaded" << std::endl;
-	
-	cftree_type::float_type birch_threshold = argc >=3 ? (cftree_type::float_type)atof(argv[2]) : 0.25f/(cftree_type::float_type)cftree_type::fdim;
-	cftree_type tree(birch_threshold, 512*1024*1024);
+	//std::cout << items.size() << " items loaded" << std::endl;
+	//
+	//cftree_type::float_type birch_threshold = argc >=3 ? (cftree_type::float_type)atof(argv[2]) : 0.25f/(cftree_type::float_type)cftree_type::fdim;
+	//cftree_type tree(birch_threshold, 512*1024*1024);
 
-	// phase 1 and 2: building, compacting when overflows memory limit
-	for( std::size_t i = 0 ; i < items.size() ; i++ )
-		tree.insert( &items[i][0] );
+	//// phase 1 and 2: building, compacting when overflows memory limit
+	//for( std::size_t i = 0 ; i < items.size() ; i++ )
+	//	tree.insert( &items[i][0] );
 
-	// phase 2 or 3: compacting? or clustering?
-	// merging overlayed sub-clusters by rebuilding true
-	tree.rebuild(false);
+	//// phase 2 or 3: compacting? or clustering?
+	//// merging overlayed sub-clusters by rebuilding true
+	//tree.rebuild(false);
 
-	// phase 3: clustering sub-clusters using the existing clustering algorithm
-	cftree_type::cfentry_vec_type entries;
-	std::vector<int> cid_vec;
-	tree.cluster( entries );
+	//// phase 3: clustering sub-clusters using the existing clustering algorithm
+	//cftree_type::cfentry_vec_type entries;
+	//std::vector<int> cid_vec;
+	//tree.cluster( entries );
 
-	// phase 4: redistribution
+	//// phase 4: redistribution
 
-	// @comment ts - it is also possible to another clustering algorithm hereafter
-	//				for example, we have k initial points for k-means clustering algorithm
-	//tree.redist_kmeans( items, entries, 0 );
+	//// @comment ts - it is also possible to another clustering algorithm hereafter
+	////				for example, we have k initial points for k-means clustering algorithm
+	////tree.redist_kmeans( items, entries, 0 );
 
-	std::vector<int> item_cids;
-	tree.redist( items.begin(), items.end(), entries, item_cids );
-	for( std::size_t i = 0 ; i < item_cids.size() ; i++ )
-		items[i].cid() = item_cids[i];
-	print_items( argc >=4 ? argv[3] : "item_cid.txt" , items);
+	//std::vector<int> item_cids;
+	//tree.redist( items.begin(), items.end(), entries, item_cids );
+	//for( std::size_t i = 0 ; i < item_cids.size() ; i++ )
+	//	items[i].cid() = item_cids[i];
+	//print_items( argc >=4 ? argv[3] : "item_cid.txt" , items);
 
 	return 0;
 }
