@@ -228,7 +228,7 @@ extern "C"
 
 		api_ptr_t* ab = (api_ptr_t*)birch;
 
-		ab->tree->rebuild(true);
+		ab->tree->rebuild(false);
 
 		cftree_type::cfentry_vec_type entries;
 		ab->tree->cluster(entries);
