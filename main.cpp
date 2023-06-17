@@ -37,7 +37,6 @@
 #include <time.h>
 
 #include <cstdio>
-#include "oneapi/tbb/tbbmalloc_proxy.h"
 
 typedef CFTree<192> cftree_type;
 
@@ -180,18 +179,18 @@ extern "C"
 
 	class api_ptr_t {
 		public:
-			items_type items;
+			cftree_type::cfentry_vec_type entries;
 			cftree_type* tree;
 
 			api_ptr_t(void) {};
 	};
 
-	DLL_API void* __stdcall birch_create(float dist_threshold, uint64_t mem_limit)
+	DLL_API void* __stdcall birch_create(float dist_threshold, uint64_t k_limit, uint32_t rebuild_interval)
 	{
 		API_FP_PRE();
 
 		api_ptr_t* ab = new api_ptr_t();
-		ab->tree = new cftree_type(dist_threshold, mem_limit);
+		ab->tree = new cftree_type(dist_threshold, k_limit, rebuild_interval);
 
 		API_FP_POST();
 
@@ -214,32 +213,87 @@ extern "C"
 	{
 		API_FP_PRE();
 
-		api_ptr_t* ab = (api_ptr_t*)birch;
+		api_ptr_t* ab = (api_ptr_t*) birch;
 
 		ab->tree->insert(line);
-		ab->items.push_back(line);
 
 		API_FP_POST();
 	}
 
-	DLL_API void __stdcall birch_get_results(void * birch, int32_t* pointToCluster)
+	DLL_API size_t __stdcall birch_compute(void* birch, bool extend, bool cluster)
 	{
 		API_FP_PRE();
 
 		api_ptr_t* ab = (api_ptr_t*)birch;
 
-		ab->tree->rebuild(false);
+		ab->tree->rebuild(extend);
 
-		cftree_type::cfentry_vec_type entries;
-		ab->tree->cluster(entries);
+		if (cluster)
+			ab->tree->cluster(ab->entries);
+		else
+			ab->tree->get_entries(ab->entries);
 
-		std::vector<int> item_cids;
-		ab->tree->redist(ab->items.begin(), ab->items.end(), entries, item_cids);
 
-		for (std::size_t i = 0; i < item_cids.size(); i++)
-			*pointToCluster++ = item_cids[i];
+		API_FP_POST();
+
+		return ab->entries.size();
+	}
+
+	DLL_API void __stdcall birch_get_centroids(void * birch, cftree_type::float_type* centroids)
+	{
+		API_FP_PRE();
+
+		api_ptr_t* ab = (api_ptr_t*) birch;
+
+		for (std::size_t i = 0; i < ab->entries.size(); i++)
+		{
+			const cftree_type::CFEntry& e = ab->entries[i];
 			
+			std::copy(e.sum, e.sum + ab->tree->fdim, centroids);
 			
+			cftree_type::float_type inv_n = 1.0 / e.n;
+
+			for (std::size_t j = 0; j < ab->tree->fdim; j++)
+			{
+				centroids[j] *= inv_n;
+			}	
+
+			centroids += ab->tree->fdim;
+		}
+
 		API_FP_POST();
 	}
+
+	DLL_API void __stdcall birch_get_clusters(void* birch, cftree_type::float_type* dataset, size_t rows, int32_t* pointToCluster)
+	{
+		API_FP_PRE();
+
+		api_ptr_t* ab = (api_ptr_t*)birch;
+
+		items_type items;
+		items.reserve(rows);
+
+		for (std::size_t row = 0; row < rows; row++)
+		{
+			items.push_back(dataset);
+			dataset += ab->tree->fdim;
+		}
+
+		std::vector<int> item_cids;
+		ab->tree->redist(items.begin(), items.end(), ab->entries, item_cids);
+
+		for (std::size_t i = 0; i < item_cids.size(); i++)
+		{
+			*pointToCluster++ = item_cids[i];
+		}
+
+
+		API_FP_POST();
+	}
+
+	DLL_API size_t __stdcall birch_get_node_size(void* birch)
+	{
+		return sizeof(cftree_type::CFNode);
+	}
+
 }

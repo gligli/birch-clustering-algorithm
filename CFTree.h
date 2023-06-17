@@ -31,6 +31,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/numeric/ublas/symmetric.hpp>
 #include <boost/numeric/ublas/vector.hpp>
+#include "pmmintrin.h"
 
 #define PAGE_SIZE			(4*1024) /* assuming 4K page */
 
@@ -54,8 +55,10 @@
 template<boost::uint32_t dim>
 class CFTree
 {
+public:
 	class CFEntry;
 	class CFNode;
+private:
 	class CFNodeItmd;
 	class CFNodeLeaf;
 
@@ -226,24 +229,68 @@ public:
 		cfnode_sptr_type next;  /** next CFNode */
 	};
 	
+private:
+	
+	static const double euclidean_intrinsic_double(int n, const double* x, const double* y, double xm, double ym) {
+		__m128d euclidean0 = _mm_setzero_pd();
+		__m128d euclidean1 = _mm_setzero_pd();
+		__m128d mula = _mm_set_pd1(xm);
+		__m128d mulb = _mm_set_pd1(ym);
+
+		for (; n > 3; n -= 4) {
+			const __m128d a0 = _mm_loadu_pd(x);
+			x += 2;
+			const __m128d a1 = _mm_loadu_pd(x);
+			x += 2;
+
+			const __m128d b0 = _mm_loadu_pd(y);
+			y += 2;
+			const __m128d b1 = _mm_loadu_pd(y);
+			y += 2;
+
+			const __m128d a0_mul = _mm_mul_pd(a0, mula);
+			const __m128d a1_mul = _mm_mul_pd(a1, mula);
+			const __m128d b0_mul = _mm_mul_pd(b0, mulb);
+			const __m128d b1_mul = _mm_mul_pd(b1, mulb);
+			
+			const __m128d a0_minus_b0 = _mm_sub_pd(a0_mul, b0_mul);
+			const __m128d a1_minus_b1 = _mm_sub_pd(a1_mul, b1_mul);
+
+			const __m128d a0_minus_b0_sq = _mm_mul_pd(a0_minus_b0, a0_minus_b0);
+			const __m128d a1_minus_b1_sq = _mm_mul_pd(a1_minus_b1, a1_minus_b1);
+
+			euclidean0 = _mm_add_pd(euclidean0, a0_minus_b0_sq);
+			euclidean1 = _mm_add_pd(euclidean1, a1_minus_b1_sq);
+		}
+
+		const __m128d euclidean = _mm_add_pd(euclidean0, euclidean1);
+
+		const __m128d sum = _mm_hadd_pd(euclidean, euclidean);
+
+		double result = sum.m128d_f64[0];
+
+		return result;
+	}
 
 public:
 
 	/** Euclidean Distance of Centroid */
 	static float_type _DistD0( const CFEntry& lhs, const CFEntry& rhs )
 	{
-		float_type dist = 0.0;
-		float_type tmp;
+		//float_type dist = 0.0;
+		//float_type tmp;
 		
 		float_type inv_lhs_n = 1.0/lhs.n;
 		float_type inv_rhs_n = 1.0/rhs.n;
 
-		for (std::size_t i = 0 ; i < dim ; i++) {
-			tmp =  lhs.sum[i]*inv_lhs_n - rhs.sum[i]*inv_rhs_n;
-			dist += tmp*tmp;
-		}
-		//assert(dist >= 0.0);
-		return (std::max)(dist, 0.0);
+		//for (std::size_t i = 0 ; i < dim ; i++) {
+		//	tmp =  lhs.sum[i]*inv_lhs_n - rhs.sum[i]*inv_rhs_n;
+		//	dist += tmp*tmp;
+		//}
+		////assert(dist >= 0.0);
+		//return (std::max)(dist, 0.0);
+
+		return euclidean_intrinsic_double(dim, lhs.sum, rhs.sum, inv_lhs_n, inv_rhs_n);
 	}
 
 	/** Manhattan Distance of Centroid */
@@ -363,8 +410,8 @@ public:
 	 * @param in_dist_func distance function between CFEntries
 	 * @param in_dist_func distance function tests if a new data-point should be absorbed or not
 	 **/
-	CFTree( float_type in_dist_threshold, std::size_t in_mem_limit, dist_func_type in_dist_func = _DistD0, dist_func_type in_absorb_dist_func = _DistD0  ) :
-		mem_limit(in_mem_limit), dist_threshold(in_dist_threshold), root( new CFNodeLeaf() ), dist_func(in_dist_func), absorb_dist_func(in_absorb_dist_func), node_cnt(1/* root node */),
+	CFTree( float_type in_dist_threshold, std::size_t in_k_limit, uint32_t in_rebuild_interval, dist_func_type in_dist_func = _DistD0, dist_func_type in_absorb_dist_func = _DistD0  ) :
+		k_limit(in_k_limit), dist_threshold(in_dist_threshold), rebuild_interval(in_rebuild_interval), rebuild_pos(0), root(new CFNodeLeaf()), dist_func(in_dist_func), absorb_dist_func(in_absorb_dist_func), node_cnt(1/* root node */),
 		leaf_dummy( new CFNodeLeaf() )
 	{
 		((CFNodeLeaf*)leaf_dummy.get())->next = root;
@@ -403,10 +450,18 @@ public:
 			split_root( e );
 		}
 
-		std::size_t curr_mem = node_cnt * sizeof(CFNode);
-		if( mem_limit > 0 && node_cnt * sizeof(CFNode) > mem_limit )
+		if (++rebuild_pos >= rebuild_interval)
 		{
-			rebuild();
+			rebuild_pos = 0;	
+
+			std::size_t n_leaf_entries = 0;
+			for (leaf_iterator it = leaf_begin(); it != leaf_end(); ++it)
+				n_leaf_entries += it->size;
+
+			if (k_limit > 0 && n_leaf_entries > k_limit)
+			{
+				rebuild();
+			}
 		}
 	}
 
@@ -700,7 +755,7 @@ public:
 		}
 
 		// construct a new tree by inserting all the node from the previous tree
-		CFTree<dim> new_tree( dist_threshold, mem_limit );
+		CFTree<dim> new_tree( dist_threshold, k_limit, rebuild_interval );
 		
 		CFNodeLeaf* leaf = (CFNodeLeaf*)leaf_dummy.get();
 		while( leaf != NULL )
@@ -729,10 +784,12 @@ private:
 	cfnode_sptr_type	leaf_dummy;	/* start node of leaves */
 	
 	// parameters
-	std::size_t			mem_limit;
+	std::size_t			k_limit;
 	float_type			dist_threshold;
-	dist_func_type		dist_func;
-	dist_func_type		absorb_dist_func;
+	dist_func_type	dist_func;
+	dist_func_type	absorb_dist_func;
+	uint32_t				rebuild_interval;
+	uint32_t				rebuild_pos;
 
 	// statistics
 	std::size_t			node_cnt;
