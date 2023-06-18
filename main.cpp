@@ -291,9 +291,4 @@ extern "C"
 		API_FP_POST();
 	}
 
-	DLL_API size_t __stdcall birch_get_node_size(void* birch)
-	{
-		return sizeof(cftree_type::CFNode);
-	}
-
 }

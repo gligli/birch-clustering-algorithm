@@ -56,9 +56,9 @@ template<boost::uint32_t dim>
 class CFTree
 {
 public:
-	class CFEntry;
-	class CFNode;
+	struct CFEntry;
 private:
+	class CFNode;
 	class CFNodeItmd;
 	class CFNodeLeaf;
 
