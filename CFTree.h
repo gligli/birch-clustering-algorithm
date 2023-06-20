@@ -28,7 +28,6 @@
 #include <assert.h>
 #include <time.h>
 #include <boost/cstdint.hpp>
-#include <boost/shared_ptr.hpp>
 #include <boost/numeric/ublas/symmetric.hpp>
 #include <boost/numeric/ublas/vector.hpp>
 #include "pmmintrin.h"
@@ -74,7 +73,7 @@ public:
 	 * shared_ptr is applied to preventing memory leakage.
 	 * This node pointer is deleted, having no referencers
 	 */
-	typedef boost::shared_ptr<CFNode> cfnode_sptr_type;
+	typedef std::vector <CFNode*> cfnode_ptr_vec_type;
 	typedef std::pair<CFEntry*, CFEntry*> cfentry_pair_type; /** pair cfentry pointers. */
 	typedef std::vector<CFEntry*> cfentry_ptr_vec_type; /** vector of cfentry pointers. */
 	typedef float_type (*dist_func_type)(const CFEntry&, const CFEntry&); /** distance function pointer. */
@@ -89,7 +88,7 @@ public:
 	struct CFEntry
 	{
 		/** Empty construct initialized with zeros */
-		CFEntry() : n(0), sum_sq(0.0)
+		CFEntry() : n(0), sum_sq(0.0), child(NULL)
 		{
 			std::fill(sum, sum + dim, 0);
 		}
@@ -98,7 +97,7 @@ public:
 		 * initialize CFEntry with one data-point
 		 */
 		template<typename T>
-		CFEntry( T* item ) : n(1), sum_sq(0.0)
+		CFEntry( T* item ) : n(1), sum_sq(0.0), child(NULL)
 		{
 			std::copy( item, item + dim, sum );
 			for( std::size_t i = 0 ; i < dim ; i++ )
@@ -106,7 +105,7 @@ public:
 		}
 
 		/** Constructor for root entry with children */
-		CFEntry( const cfnode_sptr_type& in_child ) : n(0), sum_sq(0.0), child(in_child)
+		CFEntry( CFNode* in_child ) : n(0), sum_sq(0.0), child(in_child)
 		{
 			std::fill(sum, sum + dim, 0);
 		}
@@ -148,12 +147,12 @@ public:
 		}
 
 		/** Does this CFEntry have children? */
-		bool HasChild() const	{ return child.get() != NULL; }
+		bool HasChild() const	{ return child != NULL; }
 
 		std::size_t			n;			/* the number of data-points in */
 		float_type			sum[dim];	/* linear sum of each dimension of n data-points */
 		float_type			sum_sq;		/* square sum of n data-points */
-		cfnode_sptr_type	child;		/* pointer to a child node */
+		CFNode*					child;		/* pointer to a child node */
 	};
 
 	/** CFNode is composed of several CFEntries within page-size, and acts like B-tree node.
@@ -222,11 +221,11 @@ public:
 	/** CFNode which is leaf */
 	struct CFNodeLeaf : public CFNode
 	{
-		CFNodeLeaf() : CFNode() {}
+		CFNodeLeaf() : CFNode(), prev(NULL), next(NULL) {}
 		virtual bool				IsLeaf() const { return true; }
 
-		cfnode_sptr_type prev;	/** previous CFNode */
-		cfnode_sptr_type next;  /** next CFNode */
+		CFNode* prev;	/** previous CFNode */
+		CFNode* next;  /** next CFNode */
 	};
 	
 private:
@@ -395,7 +394,7 @@ public:
 		typedef std::ptrdiff_t	difference_type;
 
 		leaf_iterator( CFNodeLeaf* in_leaf ) : leaf( in_leaf ) {}
-		leaf_iterator	operator++() { leaf = (CFNodeLeaf*)leaf->next.get(); return leaf_iterator(leaf); }
+		leaf_iterator	operator++() { leaf = (CFNodeLeaf*)leaf->next; return leaf_iterator(leaf); }
 		bool			operator!=( const leaf_iterator rhs ) const { return !(leaf == rhs.leaf); }
 		reference		operator*() { return *leaf; }
 		pointer			operator->() { return leaf; }
@@ -414,9 +413,17 @@ public:
 		k_limit(in_k_limit), dist_threshold(in_dist_threshold), rebuild_interval(in_rebuild_interval), rebuild_pos(0), root(new CFNodeLeaf()), dist_func(in_dist_func), absorb_dist_func(in_absorb_dist_func), node_cnt(1/* root node */),
 		leaf_dummy( new CFNodeLeaf() )
 	{
-		((CFNodeLeaf*)leaf_dummy.get())->next = root;
+		((CFNodeLeaf*)leaf_dummy)->next = root;
 	}
-	~CFTree(void) {}
+	~CFTree(void)
+	{
+		for (size_t i = 0; i < nodes.size(); ++i)
+			delete nodes[i];
+		nodes.clear();
+
+		delete leaf_dummy;
+		delete root;
+	}
 
 	/** whether this CFTree is empty or not */
 	bool empty() const { return root->IsEmpty(); }
@@ -442,7 +449,7 @@ public:
 	void insert( CFEntry& e )
 	{
 		bool bsplit;
-		insert(root.get(), e, bsplit);
+		insert(root, e, bsplit);
 
 		// there's no exception for the root as regard to splitting, indeed
 		if( bsplit )
@@ -466,7 +473,7 @@ public:
 	}
 
 	/** get the beginning of leaf iterators */
-	leaf_iterator leaf_begin() { return leaf_iterator( (CFNodeLeaf*)((CFNodeLeaf*)leaf_dummy.get())->next.get()); }
+	leaf_iterator leaf_begin() { return leaf_iterator( (CFNodeLeaf*)((CFNodeLeaf*)leaf_dummy)->next); }
 	/** get the end of leaf iterators  */
 	leaf_iterator leaf_end() { return leaf_iterator(NULL); }
 
@@ -501,7 +508,7 @@ private:
 		// non-leaf
 		if( close_entry.HasChild() )
 		{
-			insert( close_entry.child.get(), new_entry, bsplit );
+			insert( close_entry.child, new_entry, bsplit);
 
 			// no more split
 			if( !bsplit )
@@ -543,13 +550,13 @@ private:
 
 	void split( CFNode& node, CFEntry& close_entry, CFEntry& new_entry, bool& bsplit )
 	{
-		CFNode* old_node = close_entry.child.get();
+		CFNode* old_node = close_entry.child;
 		assert( old_node != NULL );
 
 		// make the list of entries, old entries
 		cfentry_ptr_vec_type entries;
-		entries.reserve( old_node->MaxEntrySize() + 1 );
-		for( std::size_t i = 0 ; i < root->MaxEntrySize() ; i++ )
+		entries.reserve( old_node->size + 1 );
+		for( std::size_t i = 0 ; i < old_node->size; i++ )
 			entries.push_back(&old_node->entries[i]);
 		entries.push_back(&new_entry);
 
@@ -560,8 +567,11 @@ private:
 		bool node_is_leaf = old_node->IsLeaf();
 
 		// make two split nodes
-		cfnode_sptr_type node_lhs( node_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd() );
-		cfnode_sptr_type node_rhs( node_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd() );
+		CFNode* node_lhs = node_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
+		CFNode* node_rhs = node_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
+
+		nodes.push_back(node_lhs);
+		nodes.push_back(node_rhs);
 
 		// two entries for new root node
 		// and connect child node to the entries
@@ -574,18 +584,18 @@ private:
 			
 			CFNodeLeaf* leaf_node = (CFNodeLeaf*)old_node;
 
-			cfnode_sptr_type prev = leaf_node->prev;
-			cfnode_sptr_type next = leaf_node->next;
+			CFNode* prev = leaf_node->prev;
+			CFNode* next = leaf_node->next;
 
 			if( prev != NULL )
-				((CFNodeLeaf*)prev.get())->next = node_lhs;
+				((CFNodeLeaf*)prev)->next = node_lhs;
 			if( next != NULL )
-				((CFNodeLeaf*)next.get())->prev = node_rhs;
+				((CFNodeLeaf*)next)->prev = node_rhs;
 
-			((CFNodeLeaf*)node_lhs.get())->prev = prev;
-			((CFNodeLeaf*)node_lhs.get())->next = node_rhs;
-			((CFNodeLeaf*)node_rhs.get())->prev = node_lhs;
-			((CFNodeLeaf*)node_rhs.get())->next = next;
+			((CFNodeLeaf*)node_lhs)->prev = prev;
+			((CFNodeLeaf*)node_lhs)->next = node_rhs;
+			((CFNodeLeaf*)node_rhs)->prev = node_lhs;
+			((CFNodeLeaf*)node_rhs)->next = next;
 		}
 
 		// rearrange old entries to new entries
@@ -613,8 +623,8 @@ private:
 	{
 		// make the list of entries, old entries
 		cfentry_ptr_vec_type entries;
-		entries.reserve(root->MaxEntrySize() + 1);
-		for( std::size_t i = 0 ; i < root->MaxEntrySize() ; i++ )
+		entries.reserve(root->size + 1);
+		for( std::size_t i = 0 ; i < root->size ; i++ )
 			entries.push_back(&root->entries[i]);
 		entries.push_back(&e);
 
@@ -625,8 +635,11 @@ private:
 		bool root_is_leaf = root->IsLeaf();
 
 		// make two split nodes
-		cfnode_sptr_type node_lhs( root_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd() );
-		cfnode_sptr_type node_rhs( root_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd() );
+		CFNode* node_lhs = root_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
+		CFNode* node_rhs = root_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
+
+		nodes.push_back(node_lhs);
+		nodes.push_back(node_rhs);
 
 		// two entries for new root node
 		// and connect child node to the entries
@@ -634,16 +647,16 @@ private:
 		CFEntry entry_rhs( node_rhs );
 
 		// new root node result in two entries each of which has split node respectively
-		cfnode_sptr_type new_root( new CFNodeItmd() );
+		CFNode* new_root( new CFNodeItmd() );
 
 		// update prev/next links of newly created leaves
 		if( root_is_leaf )
 		{
 			assert( node_lhs->IsLeaf() && node_rhs->IsLeaf() );
-			((CFNodeLeaf*)leaf_dummy.get())->next = node_lhs;
-			((CFNodeLeaf*)node_lhs.get())->prev = leaf_dummy;
-			((CFNodeLeaf*)node_lhs.get())->next = node_rhs;
-			((CFNodeLeaf*)node_rhs.get())->prev = node_lhs;
+			((CFNodeLeaf*)leaf_dummy)->next = node_lhs;
+			((CFNodeLeaf*)node_lhs)->prev = leaf_dummy;
+			((CFNodeLeaf*)node_lhs)->next = node_rhs;
+			((CFNodeLeaf*)node_rhs)->prev = node_lhs;
 		}
 
 		// rearrange old entries to new entries
@@ -652,6 +665,7 @@ private:
 		// substitute new_root to 'root' variable
 		new_root->Add(entry_lhs);
 		new_root->Add(entry_rhs);
+		delete root;
 		root = new_root;
 
 		// for statistics and mornitoring memory usage
@@ -710,7 +724,7 @@ private:
 		float_type	dist;
 
 		// determine new threshold
-		CFNodeLeaf* leaf = (CFNodeLeaf*)leaf_dummy.get();
+		CFNodeLeaf* leaf = (CFNodeLeaf*)leaf_dummy;
 		while( leaf != NULL )
 		{
 			if( leaf->size >= 2 )
@@ -732,7 +746,7 @@ private:
 			}
 
 			// next leaf
-			leaf = (CFNodeLeaf*)leaf->next.get();
+			leaf = (CFNodeLeaf*)leaf->next;
 		}
 		return total_d / total_n;
 	}
@@ -757,14 +771,14 @@ public:
 		// construct a new tree by inserting all the node from the previous tree
 		CFTree<dim> new_tree( dist_threshold, k_limit, rebuild_interval );
 		
-		CFNodeLeaf* leaf = (CFNodeLeaf*)leaf_dummy.get();
+		CFNodeLeaf* leaf = (CFNodeLeaf*)leaf_dummy;
 		while( leaf != NULL )
 		{
 			for( std::size_t i = 0 ; i < leaf->size ; i++ )
 				new_tree.insert(leaf->entries[i]);
 
 			// next leaf
-			leaf = (CFNodeLeaf*)leaf->next.get();
+			leaf = (CFNodeLeaf*)leaf->next;
 		}
 
 		// really I'd like to replace the previous tree to the new one by
@@ -772,16 +786,18 @@ public:
 		// copy root and dummy_node
 		// copy statistics variable
 
-		root = new_tree.root;
-		leaf_dummy = new_tree.leaf_dummy;
-		node_cnt = new_tree.node_cnt;
+		std::swap(root, new_tree.root);
+		std::swap(leaf_dummy, new_tree.leaf_dummy);
+		std::swap(nodes, new_tree.nodes);
+		std::swap(node_cnt, new_tree.node_cnt);
 	}
 
 private:
 
 	// data structure
-	cfnode_sptr_type	root;
-	cfnode_sptr_type	leaf_dummy;	/* start node of leaves */
+	CFNode*	root;
+	CFNode* leaf_dummy;	/* start node of leaves */
+	cfnode_ptr_vec_type nodes;
 	
 	// parameters
 	std::size_t			k_limit;
