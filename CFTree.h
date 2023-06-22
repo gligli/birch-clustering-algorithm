@@ -461,12 +461,15 @@ public:
 		{
 			rebuild_pos = 0;	
 
-			std::size_t n_leaf_entries = 0;
-			for (leaf_iterator it = leaf_begin(); it != leaf_end(); ++it)
-				n_leaf_entries += it->size;
-
-			if (k_limit > 0 && n_leaf_entries > k_limit)
+			for (;;)
 			{
+				std::size_t n_leaf_entries = 0;
+				for (leaf_iterator it = leaf_begin(); it != leaf_end(); ++it)
+					n_leaf_entries += it->size;
+
+				if (k_limit <= 0 || n_leaf_entries <= k_limit)
+					break;
+
 				rebuild();
 			}
 		}
@@ -764,8 +767,8 @@ public:
 		if( extend )
 		{
 			// decide the next threshold
-			float_type new_threshold = std::pow(average_dist_closest_pair_leaf_entries(),2);
-			dist_threshold = dist_threshold > new_threshold ? dist_threshold*2 : new_threshold;
+			float_type new_threshold = std::pow(average_dist_closest_pair_leaf_entries() * 0.5, 2);
+			dist_threshold = dist_threshold > new_threshold ? dist_threshold * 1.05 : new_threshold;
 		}
 
 		// construct a new tree by inserting all the node from the previous tree
