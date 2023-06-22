@@ -129,8 +129,8 @@ public:
 			{
 				float_type val = e.sum[i];
 				sum[i] += val;
-				sum_sq += val*val;
 			}
+			sum_sq += e.sum_sq;
 			n += e.n;
 		}
 
@@ -141,8 +141,8 @@ public:
 			{
 				float_type val = e.sum[i];
 				sum[i] -= val;
-				sum_sq -= val*val;
 			}
+			sum_sq -= e.sum_sq;
 			n -= e.n;
 		}
 
@@ -704,9 +704,10 @@ private:
 		float_type max_dist = -1.0;
 		for( std::size_t i = 0 ; i < entries.size() - 1 ; i++ )
 		{
+			CFEntry& e1 = *entries[i];
+
 			for( std::size_t j = i+1 ; j < entries.size() ; j++ )
 			{
-				CFEntry& e1 = *entries[i];
 				CFEntry& e2 = *entries[j];
 
 				float_type dist = dist_func( e1, e2 );
