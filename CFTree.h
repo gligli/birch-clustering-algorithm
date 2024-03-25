@@ -414,13 +414,14 @@ public:
 		leaf_dummy( new CFNodeLeaf() )
 	{
 		((CFNodeLeaf*)leaf_dummy)->next = root;
+		nodes = new(cfnode_ptr_vec_type);
 	}
 	~CFTree(void)
 	{
-		for (size_t i = 0; i < nodes.size(); ++i)
-			delete nodes[i];
-		nodes.clear();
+		for (size_t i = 0; i < nodes->size(); ++i)
+			delete nodes->at(i);
 
+		delete nodes;
 		delete leaf_dummy;
 		delete root;
 	}
@@ -573,8 +574,8 @@ private:
 		CFNode* node_lhs = node_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
 		CFNode* node_rhs = node_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
 
-		nodes.push_back(node_lhs);
-		nodes.push_back(node_rhs);
+		nodes->push_back(node_lhs);
+		nodes->push_back(node_rhs);
 
 		// two entries for new root node
 		// and connect child node to the entries
@@ -641,8 +642,8 @@ private:
 		CFNode* node_lhs = root_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
 		CFNode* node_rhs = root_is_leaf ? (CFNode*) new CFNodeLeaf() : (CFNode*) new CFNodeItmd();
 
-		nodes.push_back(node_lhs);
-		nodes.push_back(node_rhs);
+		nodes->push_back(node_lhs);
+		nodes->push_back(node_rhs);
 
 		// two entries for new root node
 		// and connect child node to the entries
@@ -801,7 +802,7 @@ private:
 	// data structure
 	CFNode*	root;
 	CFNode* leaf_dummy;	/* start node of leaves */
-	cfnode_ptr_vec_type nodes;
+	cfnode_ptr_vec_type* nodes;
 	
 	// parameters
 	std::size_t			k_limit;
