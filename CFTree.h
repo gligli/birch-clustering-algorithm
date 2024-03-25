@@ -418,12 +418,31 @@ public:
 	}
 	~CFTree(void)
 	{
-		for (size_t i = 0; i < nodes->size(); ++i)
-			delete nodes->at(i);
+		clear();
+	}
 
-		delete nodes;
-		delete leaf_dummy;
-		delete root;
+	void clear(void)
+	{
+		if(nodes)
+		{
+			for (size_t i = 0; i < nodes->size(); ++i)
+				delete nodes->at(i);
+
+			delete nodes;
+			nodes = NULL;
+		}
+
+		if (leaf_dummy)
+		{
+			delete leaf_dummy;
+			leaf_dummy = NULL;
+		}
+
+		if (root)
+		{
+			delete root;
+			root = NULL;
+		}
 	}
 
 	/** whether this CFTree is empty or not */
@@ -791,10 +810,17 @@ public:
 		// copy root and dummy_node
 		// copy statistics variable
 
-		std::swap(root, new_tree.root);
-		std::swap(leaf_dummy, new_tree.leaf_dummy);
-		std::swap(nodes, new_tree.nodes);
-		std::swap(node_cnt, new_tree.node_cnt);
+		clear();
+
+		root = new_tree.root;
+		leaf_dummy = new_tree.leaf_dummy;
+		nodes = new_tree.nodes;
+		node_cnt = new_tree.node_cnt;
+
+		new_tree.root = NULL;
+		new_tree.leaf_dummy = NULL;
+		new_tree.nodes = NULL;
+		new_tree.node_cnt = 0;
 	}
 
 private:
