@@ -31,6 +31,7 @@
 #include <boost/numeric/ublas/symmetric.hpp>
 #include <boost/numeric/ublas/vector.hpp>
 #include "pmmintrin.h"
+#include "oneapi/tbb/scalable_allocator.h"
 
 #define PAGE_SIZE			(4*1024) /* assuming 4K page */
 
@@ -821,6 +822,8 @@ public:
 		new_tree.leaf_dummy = NULL;
 		new_tree.nodes = NULL;
 		new_tree.node_cnt = 0;
+
+		scalable_allocation_command(TBBMALLOC_CLEAN_THREAD_BUFFERS, NULL);
 	}
 
 private:
